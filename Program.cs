@@ -9,6 +9,7 @@ using System.Net.Security;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -74,34 +75,45 @@ namespace DrugInfoWebSocketServer
         {
             try
             {
-                // 使用makecert.exe生成证书（如果可用）
-                // 或者提供预生成的证书
-                Console.WriteLine("正在创建SSL证书...");
-                
-                // 生成证书的PowerShell命令（需要管理员权限）
-                string powershellScript = string.Format(@"
-                    $cert = New-SelfSignedCertificate -Subject 'CN={0}' -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 2048 -Provider 'Microsoft Enhanced RSA and AES Cryptographic Provider' -KeyExportPolicy Exportable -KeyUsage DigitalSignature,KeyEncipherment -Type SSLServerAuthentication -ValidityPeriod Years -ValidityPeriodUnits 2
-                    $pwd = ConvertTo-SecureString -String '{1}' -Force -AsPlainText
-                    $path = '{2}'
-                    Export-PfxCertificate -Cert $cert -FilePath $path -Password $pwd
-                ", subjectName, password, certPath);
-                
-                // 简化版本：返回一个示例证书配置说明
-                Console.WriteLine("请手动创建SSL证书，或使用以下PowerShell命令（需要管理员权限）：");
-                Console.WriteLine(powershellScript);
-                Console.WriteLine("");
-                Console.WriteLine("或者使用OpenSSL创建证书：");
-                Console.WriteLine("openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes");
-                Console.WriteLine("openssl pkcs12 -export -out server.pfx -inkey key.pem -in cert.pem");
-                Console.WriteLine("");
-                
-                // 返回null，让程序提示用户手动创建证书
-                return null;
+                Console.WriteLine("正在自动创建SSL证书...");
+
+                string keyFile = "tmpkey.pem";
+                string certFile = "tmpcert.pem";
+
+                int code1 = RunCommand("openssl", string.Format("req -x509 -newkey rsa:2048 -subj /CN={0} -keyout {1} -out {2} -days 365 -nodes", subjectName, keyFile, certFile));
+                int code2 = RunCommand("openssl", string.Format("pkcs12 -export -out {0} -inkey {1} -in {2} -passout pass:{3}", certPath, keyFile, certFile, password));
+
+                if (code1 != 0 || code2 != 0)
+                    throw new Exception("openssl 执行失败");
+
+                if (File.Exists(keyFile)) File.Delete(keyFile);
+                if (File.Exists(certFile)) File.Delete(certFile);
+
+                return new X509Certificate2(certPath, password);
             }
             catch (Exception ex)
             {
-                Console.WriteLine("创建证书失败: " + ex.Message);
+                Console.WriteLine("自动创建证书失败: " + ex.Message);
+                Console.WriteLine("请确认已安装 openssl，或手动创建服务器证书。");
                 return null;
+            }
+        }
+
+        private static int RunCommand(string fileName, string arguments)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo(fileName, arguments);
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.UseShellExecute = false;
+                Process p = Process.Start(psi);
+                p.WaitForExit();
+                return p.ExitCode;
+            }
+            catch
+            {
+                return -1;
             }
         }
         
