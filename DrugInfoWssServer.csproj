@@ -17,6 +17,7 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Web" />
     <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Data.SQLite">
       <HintPath>lib\System.Data.SQLite.dll</HintPath>
     </Reference>
