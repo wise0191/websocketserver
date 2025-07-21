@@ -14,6 +14,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization; // 需要引用 System.Web.Extensions.dll
+using System.ServiceProcess;
+using System.Reflection;
 
 namespace DrugInfoWebSocketServer
 {
@@ -654,25 +656,122 @@ namespace DrugInfoWebSocketServer
         }
     }
 
+    // Windows Service wrapper
+    public class DrugInfoWssService : ServiceBase
+    {
+        private DrugInfoWssWebSocketServer server;
+        private Thread serverThread;
+
+        public DrugInfoWssService()
+        {
+            this.ServiceName = "DrugInfoWssServer";
+        }
+
+        protected override void OnStart(string[] args)
+        {
+            int serverPort = 8443;
+            string dbPath = "druginfo.db";
+            X509Certificate2 certificate = CertificateManager.CreateSelfSignedCertificate("localhost");
+            server = new DrugInfoWssWebSocketServer(serverPort, dbPath, certificate);
+            serverThread = new Thread(new ThreadStart(server.Start));
+            serverThread.Start();
+        }
+
+        protected override void OnStop()
+        {
+            if (server != null)
+            {
+                server.Stop();
+            }
+            if (serverThread != null && serverThread.IsAlive)
+            {
+                serverThread.Join(1000);
+            }
+        }
+    }
+
+    public static class ServiceHelper
+    {
+        public static void Install()
+        {
+            string exePath = Assembly.GetExecutingAssembly().Location;
+            string args = "create \"DrugInfoWssServer\" binPath= \"" + exePath + " service\" start= auto";
+            RunSc(args);
+        }
+
+        public static void Uninstall()
+        {
+            RunSc("delete \"DrugInfoWssServer\"");
+        }
+
+        private static void RunSc(string arguments)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo("sc", arguments);
+                psi.UseShellExecute = false;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                Process p = Process.Start(psi);
+                p.WaitForExit();
+                Console.WriteLine(p.StandardOutput.ReadToEnd());
+                string err = p.StandardError.ReadToEnd();
+                if (!string.IsNullOrEmpty(err))
+                {
+                    Console.WriteLine(err);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("执行SC命令失败: " + ex.Message);
+            }
+        }
+    }
+
     // 程序入口
     class Program
     {
         static void Main(string[] args)
         {
+            if (args.Length > 0)
+            {
+                string cmd = args[0].ToLower();
+                if (cmd == "install")
+                {
+                    ServiceHelper.Install();
+                    return;
+                }
+                if (cmd == "uninstall")
+                {
+                    ServiceHelper.Uninstall();
+                    return;
+                }
+            }
+
+            if (!Environment.UserInteractive)
+            {
+                ServiceBase.Run(new DrugInfoWssService());
+            }
+            else
+            {
+                RunInteractive();
+            }
+        }
+
+        static void RunInteractive()
+        {
             Console.WriteLine("=== 药品信息WSS WebSocket服务器 ===");
             Console.WriteLine("适配.NET 2.0 + SSL/TLS + SQLite3");
             Console.WriteLine();
-            
-            // 配置参数
+
             int serverPort = 8443; // WSS标准端口
             string dbPath = "druginfo.db";
-            
+
             try
             {
-                // 加载或创建SSL证书
                 Console.WriteLine("正在加载SSL证书...");
                 X509Certificate2 certificate = CertificateManager.CreateSelfSignedCertificate("localhost");
-                
+
                 if (certificate == null)
                 {
                     Console.WriteLine("SSL证书加载失败！请按照提示创建证书后重新运行。");
@@ -680,13 +779,12 @@ namespace DrugInfoWebSocketServer
                     Console.ReadKey();
                     return;
                 }
-                
+
                 DrugInfoWssWebSocketServer server = new DrugInfoWssWebSocketServer(serverPort, dbPath, certificate);
-                
-                // 启动服务器
+
                 Thread serverThread = new Thread(new ThreadStart(server.Start));
                 serverThread.Start();
-                
+
                 Console.WriteLine("按 'q' 键退出服务器...");
                 while (true)
                 {
@@ -696,7 +794,7 @@ namespace DrugInfoWebSocketServer
                         break;
                     }
                 }
-                
+
                 server.Stop();
                 Console.WriteLine("服务器已停止");
             }
@@ -704,7 +802,7 @@ namespace DrugInfoWebSocketServer
             {
                 Console.WriteLine("程序异常: " + ex.Message);
             }
-            
+
             Console.WriteLine("按任意键退出...");
             Console.ReadKey();
         }
