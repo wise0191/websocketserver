@@ -16,6 +16,12 @@ DrugInfoWssServer.exe install
 卸载服务使用：
 
 ```cmd
+uninstall_service.bat
+```
+
+或直接执行：
+
+```cmd
 DrugInfoWssServer.exe uninstall
 ```
 
