@@ -23,10 +23,21 @@ namespace DrugInfoWebSocketServer
     public class DrugInfo
     {
         public string Name { get; set; }
+        // 药品名称(医保目录名称)
+        public string YMMC { get; set; }
+        public string fixmedins_hilist_name { get; set; }
         public string ManuLotnum { get; set; }
         public string ManuDate { get; set; }
         public string ExpyEnd { get; set; }
         public int KCSB { get; set; }
+        // 额外字段，部分版本消息会包含
+        public int YPXH { get; set; }
+        public int YPCD { get; set; }
+        public string DRUGTRACCODG { get; set; }
+        public string MedListCodg { get; set; }
+        public decimal FinlTrnsPric { get; set; }
+        public string TYPE { get; set; }
+        public long CFMX { get; set; }
         public string Msg { get; set; }
         public DateTime CreateTime { get; set; }
     }
@@ -165,7 +176,8 @@ namespace DrugInfoWebSocketServer
                     string createTableSql = @"
                         CREATE TABLE IF NOT EXISTS druginfo (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            name TEXT NOT NULL,
+                            name TEXT,
+                            ymmc TEXT,
                             manu_lotnum TEXT,
                             manu_date TEXT,
                             expy_end TEXT,
@@ -174,10 +186,16 @@ namespace DrugInfoWebSocketServer
                             create_time DATETIME DEFAULT CURRENT_TIMESTAMP
                         )";
                     
+
                     using (SQLiteCommand cmd = new SQLiteCommand(createTableSql, conn))
                     {
                         cmd.ExecuteNonQuery();
                     }
+
+                    EnsureColumn(conn, "manu_lotnum", "TEXT");
+                    EnsureColumn(conn, "manu_date", "TEXT");
+                    EnsureColumn(conn, "expy_end", "TEXT");
+                    EnsureColumn(conn, "ymmc", "TEXT");
                     
                     Console.WriteLine("数据库初始化成功");
                 }
@@ -196,12 +214,13 @@ namespace DrugInfoWebSocketServer
                 {
                     conn.Open();
                     string insertSql = @"
-                        INSERT INTO druginfo (name, manu_lotnum, manu_date, expy_end, kcsb, msg, create_time)
-                        VALUES (@name, @manu_lotnum, @manu_date, @expy_end, @kcsb, @msg, @create_time)";
+                        INSERT INTO druginfo (name, ymmc, manu_lotnum, manu_date, expy_end, kcsb, msg, create_time)
+                        VALUES (@name, @ymmc, @manu_lotnum, @manu_date, @expy_end, @kcsb, @msg, @create_time)";
                     
                     using (SQLiteCommand cmd = new SQLiteCommand(insertSql, conn))
                     {
                         cmd.Parameters.AddWithValue("@name", drugInfo.Name ?? "");
+                        cmd.Parameters.AddWithValue("@ymmc", drugInfo.YMMC ?? "");
                         cmd.Parameters.AddWithValue("@manu_lotnum", drugInfo.ManuLotnum ?? "");
                         cmd.Parameters.AddWithValue("@manu_date", drugInfo.ManuDate ?? "");
                         cmd.Parameters.AddWithValue("@expy_end", drugInfo.ExpyEnd ?? "");
@@ -229,7 +248,7 @@ namespace DrugInfoWebSocketServer
                 using (SQLiteConnection conn = new SQLiteConnection(connectionString))
                 {
                     conn.Open();
-                    string selectSql = "SELECT * FROM druginfo WHERE name LIKE @name ORDER BY create_time DESC LIMIT 10";
+                    string selectSql = "SELECT * FROM druginfo WHERE name LIKE @name OR ymmc LIKE @name ORDER BY create_time DESC LIMIT 10";
                     
                     using (SQLiteCommand cmd = new SQLiteCommand(selectSql, conn))
                     {
@@ -242,6 +261,7 @@ namespace DrugInfoWebSocketServer
                                 DrugInfo info = new DrugInfo
                                 {
                                     Name = reader["name"].ToString(),
+                                    YMMC = reader["ymmc"].ToString(),
                                     ManuLotnum = reader["manu_lotnum"].ToString(),
                                     ManuDate = reader["manu_date"].ToString(),
                                     ExpyEnd = reader["expy_end"].ToString(),
@@ -260,6 +280,32 @@ namespace DrugInfoWebSocketServer
                 Console.WriteLine("查询数据失败: " + ex.Message);
             }
             return result;
+        }
+
+        private void EnsureColumn(SQLiteConnection conn, string column, string type)
+        {
+            bool exists = false;
+            using (SQLiteCommand cmd = new SQLiteCommand("PRAGMA table_info(druginfo)", conn))
+            using (SQLiteDataReader reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    if (reader["name"].ToString() == column)
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!exists)
+            {
+                string sql = "ALTER TABLE druginfo ADD COLUMN " + column + " " + type;
+                using (SQLiteCommand cmd = new SQLiteCommand(sql, conn))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+            }
         }
     }
 
@@ -582,8 +628,14 @@ namespace DrugInfoWebSocketServer
                         case "save_druginfo":
                             response = SaveDrugInfo(crxMsg.druginfo);
                             break;
+                        case "update_druginfo_batch":
+                            response = SaveDrugInfo(crxMsg.druginfo);
+                            break;
                         case "query_druginfo":
-                            response = QueryDrugInfo(crxMsg.druginfo.Name);
+                            string key = crxMsg.druginfo.Name;
+                            if (string.IsNullOrEmpty(key)) key = crxMsg.druginfo.YMMC;
+                            if (string.IsNullOrEmpty(key)) key = crxMsg.druginfo.fixmedins_hilist_name;
+                            response = QueryDrugInfo(key);
                             break;
                         default:
                             response.success = false;
@@ -613,7 +665,24 @@ namespace DrugInfoWebSocketServer
         {
             ServerResponse response = new ServerResponse();
             
-            if (drugInfo == null || string.IsNullOrEmpty(drugInfo.Name))
+            if (drugInfo == null)
+            {
+                response.success = false;
+                response.message = "药品信息为空";
+                return response;
+            }
+
+            if (string.IsNullOrEmpty(drugInfo.YMMC))
+            {
+                drugInfo.YMMC = drugInfo.fixmedins_hilist_name;
+            }
+
+            if (string.IsNullOrEmpty(drugInfo.Name))
+            {
+                drugInfo.Name = drugInfo.YMMC;
+            }
+
+            if (string.IsNullOrEmpty(drugInfo.Name))
             {
                 response.success = false;
                 response.message = "药品名称不能为空";

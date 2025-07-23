@@ -28,9 +28,17 @@ CRX 插件可直接通过 `wss://localhost:8443` 与本服务通信，例如：
 ```javascript
 const ws = new WebSocket('wss://localhost:8443');
 ws.onopen = () => {
-    ws.send(JSON.stringify({action: 'query_druginfo', druginfo: {Name: '药品名称'}}));
+    ws.send(JSON.stringify({action: 'update_druginfo_batch', druginfo: {
+        manu_lotnum: '111',
+        manu_date: '',
+        expy_end: '2023-01-31',
+        fixmedins_hilist_name: '阿莫西林胶囊',
+        KCSB: 123456
+    }}));
 };
 ws.onmessage = evt => console.log(evt.data);
 ```
+
+数据库表 `druginfo` 会自动创建并包含以下字段：`name`、`ymmc`、`manu_lotnum`、`manu_date`、`expy_end`、`kcsb`、`msg` 与时间戳。
 
 如浏览器出现证书警告，请将 `server.pfx` 导入受信任的根证书颁发机构。该证书仅用于本地开发测试。
