@@ -897,7 +897,9 @@ namespace DrugInfoWebSocketServer
         protected override void OnStart(string[] args)
         {
             int serverPort = 8443;
-            string dbPath = "druginfo.db";
+            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+            string dbPath = Path.Combine(exeDir, "druginfo.db");
+            Program.EnsureDatabase(dbPath);
             X509Certificate2 certificate = CertificateManager.CreateSelfSignedCertificate("localhost");
             server = new DrugInfoWssWebSocketServer(serverPort, dbPath, certificate);
             serverThread = new Thread(new ThreadStart(server.Start));
@@ -985,6 +987,42 @@ namespace DrugInfoWebSocketServer
             }
         }
 
+        public static void EnsureDatabase(string dbPath)
+        {
+            try
+            {
+                if (!File.Exists(dbPath))
+                {
+                    SQLiteConnection.CreateFile(dbPath);
+                }
+
+                using (SQLiteConnection conn = new SQLiteConnection(string.Format("Data Source={0};Version=3;", dbPath)))
+                {
+                    conn.Open();
+                    string createTableSql = @"
+                        CREATE TABLE IF NOT EXISTS druginfo (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL,
+                            manu_lotnum TEXT,
+                            manu_date TEXT,
+                            expy_end TEXT,
+                            YMMC TEXT,
+                            kcsb INTEGER DEFAULT 0,
+                            msg TEXT,
+                            create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )";
+                    using (SQLiteCommand cmd = new SQLiteCommand(createTableSql, conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("数据库创建失败: " + ex.Message);
+            }
+        }
+
         static void RunInteractive()
         {
             Console.WriteLine("=== 药品信息WSS WebSocket服务器 ===");
@@ -992,7 +1030,9 @@ namespace DrugInfoWebSocketServer
             Console.WriteLine();
 
             int serverPort = 8443; // WSS标准端口
-            string dbPath = "druginfo.db";
+            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+            string dbPath = Path.Combine(exeDir, "druginfo.db");
+            EnsureDatabase(dbPath);
 
             try
             {
