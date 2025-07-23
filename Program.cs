@@ -51,136 +51,26 @@ namespace DrugInfoWebSocketServer
     // SSL证书管理器
     public class CertificateManager
     {
-        public static X509Certificate2 CreateSelfSignedCertificate(string subjectName = "localhost")
+        public static X509Certificate2 LoadCertificate()
         {
-            // 为.NET 2.0创建自签名证书
-            // 注意：这是一个简化的实现，生产环境建议使用专业的证书生成工具
-            
             string certPath = "server.pfx";
             string certPassword = "DrugInfoServer2024";
-            
-            if (File.Exists(certPath))
+
+            if (!File.Exists(certPath))
             {
-                try
-                {
-                    return new X509Certificate2(certPath, certPassword);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("加载现有证书失败: " + ex.Message);
-                }
+                Console.WriteLine("证书文件未找到: " + certPath);
+                return null;
             }
-            
-            // 如果证书不存在，创建一个新的
-            return GenerateNewCertificate(certPath, certPassword, subjectName);
-        }
-        
-        private static X509Certificate2 GenerateNewCertificate(string certPath, string password, string subjectName)
-        {
+
             try
             {
-                Console.WriteLine("正在自动创建SSL证书...");
-
-                string keyFile = "tmpkey.pem";
-                string certFile = "tmpcert.pem";
-
-                int code1 = RunCommand("openssl", string.Format("req -x509 -newkey rsa:2048 -subj /CN={0} -keyout {1} -out {2} -days 365 -nodes", subjectName, keyFile, certFile));
-                int code2 = RunCommand("openssl", string.Format("pkcs12 -export -out {0} -inkey {1} -in {2} -passout pass:{3}", certPath, keyFile, certFile, password));
-
-                if (code1 != 0 || code2 != 0)
-                    throw new Exception("openssl 执行失败");
-
-                if (File.Exists(keyFile)) File.Delete(keyFile);
-                if (File.Exists(certFile)) File.Delete(certFile);
-
-                return new X509Certificate2(certPath, password);
+                return new X509Certificate2(certPath, certPassword);
             }
             catch (Exception ex)
             {
-                Console.WriteLine("自动创建证书失败: " + ex.Message);
-                Console.WriteLine("请确认已安装 openssl，或手动创建服务器证书。");
+                Console.WriteLine("加载证书失败: " + ex.Message);
                 return null;
             }
-        }
-
-        private static int RunCommand(string fileName, string arguments)
-        {
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo(fileName, arguments);
-                psi.RedirectStandardOutput = true;
-                psi.RedirectStandardError = true;
-                psi.UseShellExecute = false;
-                Process p = Process.Start(psi);
-                p.WaitForExit();
-                return p.ExitCode;
-            }
-            catch
-            {
-                return -1;
-            }
-        }
-
-        // 检查 OpenSSL 是否可用
-        public static bool EnsureOpenSsl()
-        {
-            if (CheckOpenSsl())
-                return true;
-
-            // 将默认安装路径加入 PATH（仅当前进程）
-            string opensslDir = @"C:\Program Files\OpenSSL-Win64\bin";
-            if (File.Exists(Path.Combine(opensslDir, "openssl.exe")))
-            {
-                string pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-                if (!pathVar.Contains(opensslDir))
-                {
-                    Environment.SetEnvironmentVariable("PATH", pathVar + ";" + opensslDir);
-                }
-            }
-
-            return CheckOpenSsl();
-        }
-
-        private static bool CheckOpenSsl()
-        {
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo("openssl", "version");
-                psi.RedirectStandardOutput = true;
-                psi.RedirectStandardError = true;
-                psi.UseShellExecute = false;
-                Process p = Process.Start(psi);
-                p.WaitForExit();
-                return p.ExitCode == 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-        
-        // 证书验证回调（用于开发环境，接受自签名证书）
-        public static bool ValidateServerCertificate(
-            object sender,
-            X509Certificate certificate,
-            X509Chain chain,
-            SslPolicyErrors sslPolicyErrors)
-        {
-            // 在开发环境中接受自签名证书
-            // 生产环境应该进行严格的证书验证
-            if (sslPolicyErrors == SslPolicyErrors.None)
-                return true;
-                
-            Console.WriteLine("SSL证书验证警告: " + sslPolicyErrors);
-            
-            // 允许自签名证书（仅开发环境）
-            if (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors ||
-                sslPolicyErrors == SslPolicyErrors.RemoteCertificateNameMismatch)
-            {
-                return true;
-            }
-            
-            return false;
         }
     }
 
@@ -935,18 +825,11 @@ namespace DrugInfoWebSocketServer
 
         protected override void OnStart(string[] args)
         {
-            if (!CertificateManager.EnsureOpenSsl())
-            {
-                EventLog.WriteEntry("OpenSSL 未安装，服务启动失败");
-                this.Stop();
-                return;
-            }
-
             int serverPort = 26663;
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
             string dbPath = Path.Combine(exeDir, "druginfo.db");
             Program.EnsureDatabase(dbPath);
-            X509Certificate2 certificate = CertificateManager.CreateSelfSignedCertificate("localhost");
+            X509Certificate2 certificate = CertificateManager.LoadCertificate();
             server = new DrugInfoWssWebSocketServer(serverPort, dbPath, certificate);
             serverThread = new Thread(new ThreadStart(server.Start));
             serverThread.Start();
@@ -1120,14 +1003,6 @@ namespace DrugInfoWebSocketServer
             Console.WriteLine("适配.NET 2.0 + SSL/TLS + SQLite3");
             Console.WriteLine();
 
-            if (!CertificateManager.EnsureOpenSsl())
-            {
-                Console.WriteLine("无法找到或安装 OpenSSL，请手动安装后重试。");
-                Console.WriteLine("按任意键退出...");
-                Console.ReadKey();
-                return;
-            }
-
             int serverPort = 26663; // WSS端口
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
             string dbPath = Path.Combine(exeDir, "druginfo.db");
@@ -1136,7 +1011,7 @@ namespace DrugInfoWebSocketServer
             try
             {
                 Console.WriteLine("正在加载SSL证书...");
-                X509Certificate2 certificate = CertificateManager.CreateSelfSignedCertificate("localhost");
+                X509Certificate2 certificate = CertificateManager.LoadCertificate();
 
                 if (certificate == null)
                 {
