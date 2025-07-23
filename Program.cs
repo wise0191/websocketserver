@@ -26,6 +26,7 @@ namespace DrugInfoWebSocketServer
         public string ManuLotnum { get; set; }
         public string ManuDate { get; set; }
         public string ExpyEnd { get; set; }
+        public string YMMC { get; set; }
         public int KCSB { get; set; }
         public string Msg { get; set; }
         public DateTime CreateTime { get; set; }
@@ -169,6 +170,7 @@ namespace DrugInfoWebSocketServer
                             manu_lotnum TEXT,
                             manu_date TEXT,
                             expy_end TEXT,
+                            YMMC TEXT,
                             kcsb INTEGER DEFAULT 0,
                             msg TEXT,
                             create_time DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -196,8 +198,8 @@ namespace DrugInfoWebSocketServer
                 {
                     conn.Open();
                     string insertSql = @"
-                        INSERT INTO druginfo (name, manu_lotnum, manu_date, expy_end, kcsb, msg, create_time)
-                        VALUES (@name, @manu_lotnum, @manu_date, @expy_end, @kcsb, @msg, @create_time)";
+                        INSERT INTO druginfo (name, manu_lotnum, manu_date, expy_end, YMMC, kcsb, msg, create_time)
+                        VALUES (@name, @manu_lotnum, @manu_date, @expy_end, @YMMC, @kcsb, @msg, @create_time)";
                     
                     using (SQLiteCommand cmd = new SQLiteCommand(insertSql, conn))
                     {
@@ -205,6 +207,7 @@ namespace DrugInfoWebSocketServer
                         cmd.Parameters.AddWithValue("@manu_lotnum", drugInfo.ManuLotnum ?? "");
                         cmd.Parameters.AddWithValue("@manu_date", drugInfo.ManuDate ?? "");
                         cmd.Parameters.AddWithValue("@expy_end", drugInfo.ExpyEnd ?? "");
+                        cmd.Parameters.AddWithValue("@YMMC", drugInfo.YMMC ?? "");
                         cmd.Parameters.AddWithValue("@kcsb", drugInfo.KCSB);
                         cmd.Parameters.AddWithValue("@msg", drugInfo.Msg ?? "");
                         cmd.Parameters.AddWithValue("@create_time", DateTime.Now);
@@ -245,6 +248,7 @@ namespace DrugInfoWebSocketServer
                                     ManuLotnum = reader["manu_lotnum"].ToString(),
                                     ManuDate = reader["manu_date"].ToString(),
                                     ExpyEnd = reader["expy_end"].ToString(),
+                                    YMMC = reader["YMMC"].ToString(),
                                     KCSB = Convert.ToInt32(reader["kcsb"]),
                                     Msg = reader["msg"].ToString(),
                                     CreateTime = Convert.ToDateTime(reader["create_time"])
@@ -291,11 +295,12 @@ namespace DrugInfoWebSocketServer
                         }
                         else
                         {
-                            string insertSql = "INSERT INTO druginfo (name, manu_date) VALUES (@name, @manu_date)";
+                            string insertSql = "INSERT INTO druginfo (name, manu_date, YMMC) VALUES (@name, @manu_date, @YMMC)";
                             using (SQLiteCommand insertCmd = new SQLiteCommand(insertSql, conn))
                             {
                                 insertCmd.Parameters.AddWithValue("@name", name);
                                 insertCmd.Parameters.AddWithValue("@manu_date", manuDate);
+                                insertCmd.Parameters.AddWithValue("@YMMC", name);
                                 return insertCmd.ExecuteNonQuery() > 0;
                             }
                         }
@@ -642,6 +647,12 @@ namespace DrugInfoWebSocketServer
                                 infoDict = msgObj["druginfo"] as Dictionary<string, object>;
                             response = UpdateDrugInfoPreload(infoDict);
                             break;
+                        case "update_druginfo_batch":
+                            Dictionary<string, object> batchInfo = null;
+                            if (msgObj.ContainsKey("druginfo"))
+                                batchInfo = msgObj["druginfo"] as Dictionary<string, object>;
+                            response = UpdateDrugInfoBatch(batchInfo);
+                            break;
                         default:
                             response.success = false;
                             response.message = "未知的操作: " + action;
@@ -697,6 +708,40 @@ namespace DrugInfoWebSocketServer
                 response.success = false;
                 response.message = "manu_date为空";
             }
+
+            return response;
+        }
+
+        private ServerResponse UpdateDrugInfoBatch(Dictionary<string, object> info)
+        {
+            ServerResponse response = new ServerResponse();
+
+            if (info == null)
+            {
+                response.success = false;
+                response.message = "批量数据缺失";
+                return response;
+            }
+
+            DrugInfo di = new DrugInfo();
+            if (info.ContainsKey("fixmedins_hilist_name"))
+                di.Name = info["fixmedins_hilist_name"] as string;
+            if (string.IsNullOrEmpty(di.Name) && info.ContainsKey("YPMC"))
+                di.Name = info["YPMC"] as string;
+
+            di.YMMC = di.Name;
+            di.ManuLotnum = info.ContainsKey("manu_lotnum") ? info["manu_lotnum"] as string : string.Empty;
+            di.ManuDate = info.ContainsKey("manu_date") ? info["manu_date"] as string : string.Empty;
+            di.ExpyEnd = info.ContainsKey("expy_end") ? info["expy_end"] as string : string.Empty;
+            if (info.ContainsKey("KCSB"))
+            {
+                try { di.KCSB = Convert.ToInt32(info["KCSB"]); }
+                catch { di.KCSB = 0; }
+            }
+
+            bool ok = database.InsertDrugInfo(di);
+            response.success = ok;
+            response.message = ok ? "批量更新成功" : "批量更新失败";
 
             return response;
         }
