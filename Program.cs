@@ -261,6 +261,53 @@ namespace DrugInfoWebSocketServer
             }
             return result;
         }
+
+        public bool UpsertManuDate(string name, string manuDate)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+
+            try
+            {
+                using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+                {
+                    conn.Open();
+
+                    // 检查记录是否存在
+                    string selectSql = "SELECT COUNT(*) FROM druginfo WHERE name=@name";
+                    using (SQLiteCommand selectCmd = new SQLiteCommand(selectSql, conn))
+                    {
+                        selectCmd.Parameters.AddWithValue("@name", name);
+                        int count = Convert.ToInt32(selectCmd.ExecuteScalar());
+
+                        if (count > 0)
+                        {
+                            string updateSql = "UPDATE druginfo SET manu_date=@manu_date WHERE name=@name";
+                            using (SQLiteCommand updateCmd = new SQLiteCommand(updateSql, conn))
+                            {
+                                updateCmd.Parameters.AddWithValue("@manu_date", manuDate);
+                                updateCmd.Parameters.AddWithValue("@name", name);
+                                return updateCmd.ExecuteNonQuery() > 0;
+                            }
+                        }
+                        else
+                        {
+                            string insertSql = "INSERT INTO druginfo (name, manu_date) VALUES (@name, @manu_date)";
+                            using (SQLiteCommand insertCmd = new SQLiteCommand(insertSql, conn))
+                            {
+                                insertCmd.Parameters.AddWithValue("@name", name);
+                                insertCmd.Parameters.AddWithValue("@manu_date", manuDate);
+                                return insertCmd.ExecuteNonQuery() > 0;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("更新数据失败: " + ex.Message);
+                return false;
+            }
+        }
     }
 
     // WSS WebSocket连接处理类
@@ -478,6 +525,7 @@ namespace DrugInfoWebSocketServer
         private X509Certificate2 serverCertificate;
         private bool isRunning = false;
         private int port;
+        private Dictionary<string, string> preloadCache = new Dictionary<string, string>();
 
         public DrugInfoWssWebSocketServer(int serverPort, string dbPath, X509Certificate2 certificate)
         {
@@ -567,31 +615,40 @@ namespace DrugInfoWebSocketServer
         {
             try
             {
-                CrxMessage crxMsg = jsonSerializer.DeserializeObject(message) as CrxMessage;
+                Dictionary<string, object> msgObj = jsonSerializer.DeserializeObject(message) as Dictionary<string, object>;
                 ServerResponse response = new ServerResponse();
-                
-                if (crxMsg == null)
+
+                if (msgObj == null || !msgObj.ContainsKey("action"))
                 {
                     response.success = false;
                     response.message = "消息格式错误";
                 }
                 else
                 {
-                    switch (crxMsg.action)
+                    string action = msgObj["action"] as string;
+                    switch (action)
                     {
                         case "save_druginfo":
-                            response = SaveDrugInfo(crxMsg.druginfo);
+                            CrxMessage saveMsg = jsonSerializer.Deserialize<CrxMessage>(message);
+                            response = SaveDrugInfo(saveMsg.druginfo);
                             break;
                         case "query_druginfo":
-                            response = QueryDrugInfo(crxMsg.druginfo.Name);
+                            CrxMessage queryMsg = jsonSerializer.Deserialize<CrxMessage>(message);
+                            response = QueryDrugInfo(queryMsg.druginfo.Name);
+                            break;
+                        case "update_druginfo_preload":
+                            Dictionary<string, object> infoDict = null;
+                            if (msgObj.ContainsKey("druginfo"))
+                                infoDict = msgObj["druginfo"] as Dictionary<string, object>;
+                            response = UpdateDrugInfoPreload(infoDict);
                             break;
                         default:
                             response.success = false;
-                            response.message = "未知的操作: " + crxMsg.action;
+                            response.message = "未知的操作: " + action;
                             break;
                     }
                 }
-                
+
                 string responseJson = jsonSerializer.Serialize(response);
                 connection.SendMessage(responseJson);
                 Console.WriteLine("发送响应: " + responseJson);
@@ -607,6 +664,41 @@ namespace DrugInfoWebSocketServer
                 string errorJson = jsonSerializer.Serialize(errorResponse);
                 connection.SendMessage(errorJson);
             }
+        }
+
+        private ServerResponse UpdateDrugInfoPreload(Dictionary<string, object> info)
+        {
+            ServerResponse response = new ServerResponse();
+
+            if (info == null)
+            {
+                response.success = false;
+                response.message = "预加载数据缺失";
+                return response;
+            }
+
+            string name = string.Empty;
+            if (info.ContainsKey("YPMC"))
+                name = info["YPMC"] as string;
+            if (string.IsNullOrEmpty(name) && info.ContainsKey("fixmedins_hilist_name"))
+                name = info["fixmedins_hilist_name"] as string;
+
+            string manuDate = info.ContainsKey("manu_date") ? info["manu_date"] as string : string.Empty;
+
+            if (!string.IsNullOrEmpty(manuDate))
+            {
+                preloadCache[name] = manuDate;
+                bool ok = database.UpsertManuDate(name, manuDate);
+                response.success = ok;
+                response.message = ok ? "预加载成功" : "预加载失败";
+            }
+            else
+            {
+                response.success = false;
+                response.message = "manu_date为空";
+            }
+
+            return response;
         }
 
         private ServerResponse SaveDrugInfo(DrugInfo drugInfo)
