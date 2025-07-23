@@ -1037,6 +1037,31 @@ namespace DrugInfoWebSocketServer
     // 程序入口
     class Program
     {
+        private static Mutex instanceMutex;
+
+        private static bool EnsureSingleInstance()
+        {
+            try
+            {
+                int currentId = Process.GetCurrentProcess().Id;
+                string procName = Process.GetCurrentProcess().ProcessName;
+                foreach (Process p in Process.GetProcessesByName(procName))
+                {
+                    if (p.Id != currentId)
+                    {
+                        try { p.Kill(); }
+                        catch { }
+                    }
+                }
+
+                instanceMutex = new Mutex(true, "DrugInfoWssServerMutex", out _);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
         private static bool IsAdministrator()
         {
             try
@@ -1052,6 +1077,7 @@ namespace DrugInfoWebSocketServer
         }
         static void Main(string[] args)
         {
+            EnsureSingleInstance();
             if (args.Length > 0)
             {
                 string cmd = args[0].ToLower();
