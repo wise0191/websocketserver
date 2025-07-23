@@ -26,14 +26,14 @@ uninstall_service.bat
 DrugInfoWssServer.exe uninstall
 ```
 
-安装后将创建名为 **DrugInfoWssServer** 的服务，启动类型为自动。服务启动后在后台监听 `wss://localhost:8443`。
+安装后将创建名为 **DrugInfoWssServer** 的服务，启动类型为自动。服务启动后在后台监听 `wss://localhost:26663`。
 
 ## 在 CRX 中使用 WSS
 
-CRX 插件可直接通过 `wss://localhost:8443` 与本服务通信，例如：
+CRX 插件可直接通过 `wss://localhost:26663` 与本服务通信，例如：
 
 ```javascript
-const ws = new WebSocket('wss://localhost:8443');
+const ws = new WebSocket('wss://localhost:26663');
  ws.onopen = () => {
     ws.send(JSON.stringify({action: 'query_druginfo', druginfo: {Name: '药品名称'}}));
 };

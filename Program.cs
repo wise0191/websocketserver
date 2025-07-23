@@ -16,6 +16,7 @@ using System.Threading;
 using MiniJSON;
 using System.ServiceProcess;
 using System.Reflection;
+using System.Security.Principal;
 
 namespace DrugInfoWebSocketServer
 {
@@ -972,7 +973,7 @@ namespace DrugInfoWebSocketServer
                 return;
             }
 
-            int serverPort = 8443;
+            int serverPort = 26663;
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
             string dbPath = Path.Combine(exeDir, "druginfo.db");
             Program.EnsureDatabase(dbPath);
@@ -1036,6 +1037,19 @@ namespace DrugInfoWebSocketServer
     // 程序入口
     class Program
     {
+        private static bool IsAdministrator()
+        {
+            try
+            {
+                WindowsIdentity identity = WindowsIdentity.GetCurrent();
+                WindowsPrincipal principal = new WindowsPrincipal(identity);
+                return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch
+            {
+                return false;
+            }
+        }
         static void Main(string[] args)
         {
             if (args.Length > 0)
@@ -1051,6 +1065,12 @@ namespace DrugInfoWebSocketServer
                     ServiceHelper.Uninstall();
                     return;
                 }
+            }
+
+            if (Environment.UserInteractive && !IsAdministrator())
+            {
+                Console.WriteLine("请以管理员身份运行本程序。");
+                return;
             }
 
             if (!Environment.UserInteractive)
@@ -1113,7 +1133,7 @@ namespace DrugInfoWebSocketServer
                 return;
             }
 
-            int serverPort = 8443; // WSS标准端口
+            int serverPort = 26663; // WSS端口
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
             string dbPath = Path.Combine(exeDir, "druginfo.db");
             EnsureDatabase(dbPath);
