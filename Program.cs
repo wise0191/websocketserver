@@ -5,10 +5,7 @@ using System.Data.SQLite;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Net.Security;
-using System.Security.Authentication;
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -48,33 +45,7 @@ namespace DrugInfoWebSocketServer
         public object data { get; set; }
     }
 
-    // SSL证书管理器
-    public class CertificateManager
-    {
-        public static X509Certificate2 LoadCertificate()
-        {
-            string certPath = "server.pfx";
-            string certPassword = "DrugInfoServer2024";
-
-            if (!File.Exists(certPath))
-            {
-                Console.WriteLine("证书文件未找到: " + certPath);
-                return null;
-            }
-
-            try
-            {
-                return new X509Certificate2(certPath, certPassword);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("加载证书失败: " + ex.Message);
-                return null;
-            }
-        }
-    }
-
-    // SQLite数据库管理器（与之前相同）
+    // SQLite数据库管理器
     public class DrugInfoDatabase
     {
         private string connectionString;
@@ -104,12 +75,12 @@ namespace DrugInfoWebSocketServer
                             msg TEXT,
                             create_time DATETIME DEFAULT CURRENT_TIMESTAMP
                         )";
-                    
+
                     using (SQLiteCommand cmd = new SQLiteCommand(createTableSql, conn))
                     {
                         cmd.ExecuteNonQuery();
                     }
-                    
+
                     Console.WriteLine("数据库初始化成功");
                 }
             }
@@ -129,7 +100,7 @@ namespace DrugInfoWebSocketServer
                     string insertSql = @"
                         INSERT INTO druginfo (name, manu_lotnum, manu_date, expy_end, YMMC, kcsb, msg, create_time)
                         VALUES (@name, @manu_lotnum, @manu_date, @expy_end, @YMMC, @kcsb, @msg, @create_time)";
-                    
+
                     using (SQLiteCommand cmd = new SQLiteCommand(insertSql, conn))
                     {
                         cmd.Parameters.AddWithValue("@name", drugInfo.Name ?? "");
@@ -140,7 +111,7 @@ namespace DrugInfoWebSocketServer
                         cmd.Parameters.AddWithValue("@kcsb", drugInfo.KCSB);
                         cmd.Parameters.AddWithValue("@msg", drugInfo.Msg ?? "");
                         cmd.Parameters.AddWithValue("@create_time", DateTime.Now);
-                        
+
                         int result = cmd.ExecuteNonQuery();
                         return result > 0;
                     }
@@ -162,11 +133,11 @@ namespace DrugInfoWebSocketServer
                 {
                     conn.Open();
                     string selectSql = "SELECT * FROM druginfo WHERE name LIKE @name ORDER BY create_time DESC LIMIT 10";
-                    
+
                     using (SQLiteCommand cmd = new SQLiteCommand(selectSql, conn))
                     {
                         cmd.Parameters.AddWithValue("@name", "%" + name + "%");
-                        
+
                         using (SQLiteDataReader reader = cmd.ExecuteReader())
                         {
                             while (reader.Read())
@@ -244,32 +215,18 @@ namespace DrugInfoWebSocketServer
         }
     }
 
-    // WSS WebSocket连接处理类
-    public class WssWebSocketConnection
+    // WS WebSocket连接处理类（移除SSL支持）
+    public class WsWebSocketConnection
     {
         private TcpClient client;
-        private SslStream sslStream;
+        private NetworkStream networkStream;
         private bool isConnected = false;
-        
-        public WssWebSocketConnection(TcpClient tcpClient, X509Certificate2 serverCertificate)
+
+        public WsWebSocketConnection(TcpClient tcpClient)
         {
             client = tcpClient;
-            
-            // 创建SSL流
-            NetworkStream networkStream = client.GetStream();
-            sslStream = new SslStream(networkStream, false);
-            
-            try
-            {
-                // 进行SSL服务器身份验证
-                sslStream.AuthenticateAsServer(serverCertificate, false, SslProtocols.Tls, true);
-                Console.WriteLine("SSL握手成功");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("SSL握手失败: " + ex.Message);
-                throw;
-            }
+            networkStream = client.GetStream();
+            Console.WriteLine("WebSocket连接已建立");
         }
 
         public bool PerformHandshake()
@@ -277,12 +234,12 @@ namespace DrugInfoWebSocketServer
             try
             {
                 byte[] buffer = new byte[1024];
-                int bytesRead = sslStream.Read(buffer, 0, buffer.Length);
+                int bytesRead = networkStream.Read(buffer, 0, buffer.Length);
                 string request = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                
+
                 Console.WriteLine("WebSocket握手请求:");
                 Console.WriteLine(request);
-                
+
                 if (request.Contains("Upgrade: websocket"))
                 {
                     string key = ExtractWebSocketKey(request);
@@ -293,13 +250,13 @@ namespace DrugInfoWebSocketServer
                                         "Connection: Upgrade\r\n" +
                                         "Upgrade: websocket\r\n" +
                                         "Sec-WebSocket-Accept: " + responseKey + "\r\n\r\n";
-                        
+
                         Console.WriteLine("WebSocket握手响应:");
                         Console.WriteLine(response);
-                        
+
                         byte[] responseBytes = Encoding.UTF8.GetBytes(response);
-                        sslStream.Write(responseBytes, 0, responseBytes.Length);
-                        sslStream.Flush();
+                        networkStream.Write(responseBytes, 0, responseBytes.Length);
+                        networkStream.Flush();
                         isConnected = true;
                         return true;
                     }
@@ -332,46 +289,46 @@ namespace DrugInfoWebSocketServer
             try
             {
                 if (!isConnected) return null;
-                
+
                 byte[] buffer = new byte[2];
-                int bytesRead = sslStream.Read(buffer, 0, 2);
-                
+                int bytesRead = networkStream.Read(buffer, 0, 2);
+
                 if (bytesRead < 2) return null;
-                
+
                 bool fin = (buffer[0] & 0x80) != 0;
                 int opcode = buffer[0] & 0x0F;
                 bool masked = (buffer[1] & 0x80) != 0;
                 int payloadLength = buffer[1] & 0x7F;
-                
+
                 if (opcode == 8) // 连接关闭
                 {
                     isConnected = false;
                     return null;
                 }
-                
+
                 if (payloadLength == 126)
                 {
                     byte[] lengthBuffer = new byte[2];
-                    sslStream.Read(lengthBuffer, 0, 2);
+                    networkStream.Read(lengthBuffer, 0, 2);
                     payloadLength = (lengthBuffer[0] << 8) | lengthBuffer[1];
                 }
                 else if (payloadLength == 127)
                 {
                     byte[] lengthBuffer = new byte[8];
-                    sslStream.Read(lengthBuffer, 0, 8);
+                    networkStream.Read(lengthBuffer, 0, 8);
                     // 简化处理，不支持超大消息
                     payloadLength = (int)BitConverter.ToInt64(lengthBuffer, 0);
                 }
-                
+
                 byte[] maskKey = new byte[4];
                 if (masked)
                 {
-                    sslStream.Read(maskKey, 0, 4);
+                    networkStream.Read(maskKey, 0, 4);
                 }
-                
+
                 byte[] payload = new byte[payloadLength];
-                sslStream.Read(payload, 0, payloadLength);
-                
+                networkStream.Read(payload, 0, payloadLength);
+
                 if (masked)
                 {
                     for (int i = 0; i < payload.Length; i++)
@@ -379,7 +336,7 @@ namespace DrugInfoWebSocketServer
                         payload[i] ^= maskKey[i % 4];
                     }
                 }
-                
+
                 return Encoding.UTF8.GetString(payload);
             }
             catch (Exception ex)
@@ -395,10 +352,10 @@ namespace DrugInfoWebSocketServer
             try
             {
                 if (!isConnected) return false;
-                
+
                 byte[] messageBytes = Encoding.UTF8.GetBytes(message);
                 byte[] frame;
-                
+
                 if (messageBytes.Length < 126)
                 {
                     frame = new byte[2 + messageBytes.Length];
@@ -420,9 +377,9 @@ namespace DrugInfoWebSocketServer
                     // 简化处理，不支持超大消息
                     return false;
                 }
-                
-                sslStream.Write(frame, 0, frame.Length);
-                sslStream.Flush();
+
+                networkStream.Write(frame, 0, frame.Length);
+                networkStream.Flush();
                 return true;
             }
             catch (Exception ex)
@@ -443,81 +400,70 @@ namespace DrugInfoWebSocketServer
             try
             {
                 isConnected = false;
-                if (sslStream != null) sslStream.Close();
+                if (networkStream != null) networkStream.Close();
                 if (client != null) client.Close();
             }
             catch { }
         }
     }
 
-    // 主WSS WebSocket服务器类
-    public class DrugInfoWssWebSocketServer
+    // 主WS WebSocket服务器类（移除SSL支持）
+    public class DrugInfoWsWebSocketServer
     {
         private TcpListener server;
         private DrugInfoDatabase database;
         private SimpleJsonSerializer jsonSerializer;
-        private X509Certificate2 serverCertificate;
         private bool isRunning = false;
         private int port;
         private Dictionary<string, string> preloadCache = new Dictionary<string, string>();
 
-        public DrugInfoWssWebSocketServer(int serverPort, string dbPath, X509Certificate2 certificate)
+        public DrugInfoWsWebSocketServer(int serverPort, string dbPath)
         {
             port = serverPort;
             database = new DrugInfoDatabase(dbPath);
             jsonSerializer = new SimpleJsonSerializer();
-            serverCertificate = certificate;
         }
 
         public void Start()
         {
             try
             {
-                if (serverCertificate == null)
-                {
-                    Console.WriteLine("错误: SSL证书未找到！");
-                    Console.WriteLine("请确保 server.pfx 文件存在，或手动创建SSL证书。");
-                    return;
-                }
-                
                 server = new TcpListener(IPAddress.Any, port);
                 server.Start();
                 isRunning = true;
-                
-                Console.WriteLine("药品信息WSS WebSocket服务器启动成功，监听端口: " + port);
-                Console.WriteLine("SSL证书: " + serverCertificate.Subject);
-                Console.WriteLine("证书有效期: " + serverCertificate.NotAfter);
+
+                Console.WriteLine("药品信息WS WebSocket服务器启动成功，监听端口: " + port);
                 Console.WriteLine("等待CRX连接...");
                 Console.WriteLine("");
-                
+
                 while (isRunning)
                 {
                     TcpClient client = server.AcceptTcpClient();
-                    Console.WriteLine("新的SSL客户端连接: " + client.Client.RemoteEndPoint);
-                    
+                    Console.WriteLine("新的客户端连接: " + client.Client.RemoteEndPoint);
+
                     Thread clientThread = new Thread(new ParameterizedThreadStart(HandleClient));
                     clientThread.Start(client);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine("WSS服务器启动失败: " + ex.Message);
+                Console.WriteLine("WS服务器启动失败: " + ex.Message);
             }
         }
 
         private void HandleClient(object clientObj)
         {
             TcpClient client = (TcpClient)clientObj;
-            WssWebSocketConnection wsConnection = null;
-            
+            WsWebSocketConnection wsConnection = null;
+
             try
             {
-                wsConnection = new WssWebSocketConnection(client, serverCertificate);
-                
+                wsConnection = new WsWebSocketConnection(client);
+
                 if (wsConnection.PerformHandshake())
                 {
-                    Console.WriteLine("WSS WebSocket握手成功");
-                    
+                    Console.WriteLine("WS WebSocket握手成功");
+
                     while (wsConnection.IsConnected)
                     {
                         string message = wsConnection.ReceiveMessage();
@@ -532,12 +478,12 @@ namespace DrugInfoWebSocketServer
                         }
                     }
                 }
-                
-                Console.WriteLine("SSL客户端断开连接");
+
+                Console.WriteLine("客户端断开连接");
             }
             catch (Exception ex)
             {
-                Console.WriteLine("处理SSL客户端连接异常: " + ex.Message);
+                Console.WriteLine("处理客户端连接异常: " + ex.Message);
             }
             finally
             {
@@ -545,7 +491,7 @@ namespace DrugInfoWebSocketServer
             }
         }
 
-        private void ProcessCrxMessage(WssWebSocketConnection connection, string message)
+        private void ProcessCrxMessage(WsWebSocketConnection connection, string message)
         {
             try
             {
@@ -692,14 +638,14 @@ namespace DrugInfoWebSocketServer
         private ServerResponse SaveDrugInfo(DrugInfo drugInfo)
         {
             ServerResponse response = new ServerResponse();
-            
+
             if (drugInfo == null || string.IsNullOrEmpty(drugInfo.Name))
             {
                 response.success = false;
                 response.message = "药品名称不能为空";
                 return response;
             }
-            
+
             bool success = database.InsertDrugInfo(drugInfo);
             response.success = success;
             response.message = success ? "药品信息保存成功" : "药品信息保存失败";
@@ -736,14 +682,14 @@ namespace DrugInfoWebSocketServer
         private ServerResponse QueryDrugInfo(string drugName)
         {
             ServerResponse response = new ServerResponse();
-            
+
             if (string.IsNullOrEmpty(drugName))
             {
                 response.success = false;
                 response.message = "药品名称不能为空";
                 return response;
             }
-            
+
             List<DrugInfo> drugInfoList = database.GetDrugInfoByName(drugName);
             response.success = true;
             response.message = "查询成功，找到 " + drugInfoList.Count + " 条记录";
@@ -813,24 +759,23 @@ namespace DrugInfoWebSocketServer
     }
 
     // Windows Service wrapper
-    public class DrugInfoWssService : ServiceBase
+    public class DrugInfoWsService : ServiceBase
     {
-        private DrugInfoWssWebSocketServer server;
+        private DrugInfoWsWebSocketServer server;
         private Thread serverThread;
 
-        public DrugInfoWssService()
+        public DrugInfoWsService()
         {
-            this.ServiceName = "DrugInfoWssServer";
+            this.ServiceName = "DrugInfoWsServer";
         }
 
         protected override void OnStart(string[] args)
         {
-            int serverPort = 26663;
+            int serverPort = 26662; // WS端口（非SSL）
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
             string dbPath = Path.Combine(exeDir, "druginfo.db");
             Program.EnsureDatabase(dbPath);
-            X509Certificate2 certificate = CertificateManager.LoadCertificate();
-            server = new DrugInfoWssWebSocketServer(serverPort, dbPath, certificate);
+            server = new DrugInfoWsWebSocketServer(serverPort, dbPath);
             serverThread = new Thread(new ThreadStart(server.Start));
             serverThread.Start();
         }
@@ -853,13 +798,13 @@ namespace DrugInfoWebSocketServer
         public static void Install()
         {
             string exePath = Assembly.GetExecutingAssembly().Location;
-            string args = "create \"DrugInfoWssServer\" binPath= \"" + exePath + " service\" start= auto";
+            string args = "create \"DrugInfoWsServer\" binPath= \"" + exePath + " service\" start= auto";
             RunSc(args);
         }
 
         public static void Uninstall()
         {
-            RunSc("delete \"DrugInfoWssServer\"");
+            RunSc("delete \"DrugInfoWsServer\"");
         }
 
         private static void RunSc(string arguments)
@@ -906,7 +851,7 @@ namespace DrugInfoWebSocketServer
                     }
                 }
 
-                instanceMutex = new Mutex(true, "DrugInfoWssServerMutex", out _);
+                instanceMutex = new Mutex(true, "DrugInfoWsServerMutex", out _);
                 return true;
             }
             catch
@@ -914,6 +859,7 @@ namespace DrugInfoWebSocketServer
                 return false;
             }
         }
+
         private static bool IsAdministrator()
         {
             try
@@ -927,6 +873,7 @@ namespace DrugInfoWebSocketServer
                 return false;
             }
         }
+
         static void Main(string[] args)
         {
             EnsureSingleInstance();
@@ -953,7 +900,7 @@ namespace DrugInfoWebSocketServer
 
             if (!Environment.UserInteractive)
             {
-                ServiceBase.Run(new DrugInfoWssService());
+                ServiceBase.Run(new DrugInfoWsService());
             }
             else
             {
@@ -999,29 +946,18 @@ namespace DrugInfoWebSocketServer
 
         static void RunInteractive()
         {
-            Console.WriteLine("=== 药品信息WSS WebSocket服务器 ===");
-            Console.WriteLine("适配.NET 2.0 + SSL/TLS + SQLite3");
+            Console.WriteLine("=== 药品信息WS WebSocket服务器 ===");
+            Console.WriteLine("适配.NET 2.0 + SQLite3（无SSL加密）");
             Console.WriteLine();
 
-            int serverPort = 26663; // WSS端口
+            int serverPort = 26662; // WS端口（非SSL）
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
             string dbPath = Path.Combine(exeDir, "druginfo.db");
             EnsureDatabase(dbPath);
 
             try
             {
-                Console.WriteLine("正在加载SSL证书...");
-                X509Certificate2 certificate = CertificateManager.LoadCertificate();
-
-                if (certificate == null)
-                {
-                    Console.WriteLine("SSL证书加载失败！请按照提示创建证书后重新运行。");
-                    Console.WriteLine("按任意键退出...");
-                    Console.ReadKey();
-                    return;
-                }
-
-                DrugInfoWssWebSocketServer server = new DrugInfoWssWebSocketServer(serverPort, dbPath, certificate);
+                DrugInfoWsWebSocketServer server = new DrugInfoWsWebSocketServer(serverPort, dbPath);
 
                 Thread serverThread = new Thread(new ThreadStart(server.Start));
                 serverThread.Start();
