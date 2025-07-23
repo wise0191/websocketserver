@@ -663,6 +663,10 @@ namespace DrugInfoWebSocketServer
                                 batchInfo = msgObj["druginfo"] as Dictionary<string, object>;
                             response = UpdateDrugInfoBatch(batchInfo);
                             break;
+                        case "update_druginfo_productdate":
+                            CrxMessage pdMsg = jsonSerializer.Deserialize<CrxMessage>(message);
+                            response = UpdateDrugInfoProductDate(pdMsg.druginfo);
+                            break;
                         default:
                             response.success = false;
                             response.message = "未知的操作: " + action;
@@ -770,7 +774,33 @@ namespace DrugInfoWebSocketServer
             bool success = database.InsertDrugInfo(drugInfo);
             response.success = success;
             response.message = success ? "药品信息保存成功" : "药品信息保存失败";
-            
+
+            return response;
+        }
+
+        private ServerResponse UpdateDrugInfoProductDate(DrugInfo drugInfo)
+        {
+            ServerResponse response = new ServerResponse();
+
+            if (drugInfo == null || string.IsNullOrEmpty(drugInfo.Name))
+            {
+                response.success = false;
+                response.message = "药品名称不能为空";
+                return response;
+            }
+
+            if (string.IsNullOrEmpty(drugInfo.ManuDate))
+            {
+                response.success = false;
+                response.message = "生产日期不能为空";
+                return response;
+            }
+
+            preloadCache[drugInfo.Name] = drugInfo.ManuDate;
+            bool ok = database.UpsertManuDate(drugInfo.Name, drugInfo.ManuDate);
+            response.success = ok;
+            response.message = ok ? "更新成功" : "更新失败";
+
             return response;
         }
 
