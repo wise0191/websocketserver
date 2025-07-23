@@ -2,8 +2,8 @@
 用于配合 CRX 的 WebSocket 服务器，接收信息并存入 SQLite3。
 运行环境：.NET 2.0 + SQLite3。
 
-启动程序会检查 `server.pfx`，如不存在则尝试使用 `openssl` 自动生成自签名证书。
-请确保系统已安装 `openssl`，并将其可执行文件所在目录加入 `PATH` 环境变量。
+启动程序会从当前目录加载 `server.pfx` 证书，密码为 `DrugInfoServer2024`。
+请确保该证书已存在后再运行程序。
 
 ## 安装为 Windows 服务
 
