@@ -119,6 +119,75 @@ namespace DrugInfoWebSocketServer
                 return -1;
             }
         }
+
+        // 检查并在需要时安装 OpenSSL
+        public static bool EnsureOpenSsl()
+        {
+            if (CheckOpenSsl())
+                return true;
+
+            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+            string installer = Path.Combine(exeDir, "Win64OpenSSL-3_5_1.exe");
+            if (File.Exists(installer))
+            {
+                try
+                {
+                    Console.WriteLine("OpenSSL 未检测到，尝试自动安装...");
+                    ProcessStartInfo psi = new ProcessStartInfo(installer, "/silent /sp- /suppressmsgboxes /norestart");
+                    psi.UseShellExecute = false;
+                    psi.RedirectStandardOutput = true;
+                    psi.RedirectStandardError = true;
+                    Process p = Process.Start(psi);
+                    p.WaitForExit();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("自动安装 OpenSSL 失败: " + ex.Message);
+                }
+            }
+            else
+            {
+                Console.WriteLine("未找到 OpenSSL 安装包: " + installer);
+            }
+
+            // 将默认安装路径加入PATH（仅当前进程）
+            string opensslDir = @"C:\Program Files\OpenSSL-Win64\bin";
+            if (File.Exists(Path.Combine(opensslDir, "openssl.exe")))
+            {
+                string pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+                if (!pathVar.Contains(opensslDir))
+                {
+                    Environment.SetEnvironmentVariable("PATH", pathVar + ";" + opensslDir);
+                }
+            }
+
+            for (int i = 0; i < 10; i++)
+            {
+                if (CheckOpenSsl())
+                    return true;
+                Thread.Sleep(3000);
+            }
+
+            return CheckOpenSsl();
+        }
+
+        private static bool CheckOpenSsl()
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo("openssl", "version");
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.UseShellExecute = false;
+                Process p = Process.Start(psi);
+                p.WaitForExit();
+                return p.ExitCode == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
         
         // 证书验证回调（用于开发环境，接受自签名证书）
         public static bool ValidateServerCertificate(
@@ -896,6 +965,13 @@ namespace DrugInfoWebSocketServer
 
         protected override void OnStart(string[] args)
         {
+            if (!Program.EnsureOpenSsl())
+            {
+                EventLog.WriteEntry("OpenSSL 未安装，服务启动失败");
+                this.Stop();
+                return;
+            }
+
             int serverPort = 8443;
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
             string dbPath = Path.Combine(exeDir, "druginfo.db");
@@ -1028,6 +1104,14 @@ namespace DrugInfoWebSocketServer
             Console.WriteLine("=== 药品信息WSS WebSocket服务器 ===");
             Console.WriteLine("适配.NET 2.0 + SSL/TLS + SQLite3");
             Console.WriteLine();
+
+            if (!EnsureOpenSsl())
+            {
+                Console.WriteLine("无法找到或安装 OpenSSL，请手动安装后重试。");
+                Console.WriteLine("按任意键退出...");
+                Console.ReadKey();
+                return;
+            }
 
             int serverPort = 8443; // WSS标准端口
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
