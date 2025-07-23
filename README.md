@@ -33,10 +33,19 @@ CRX 插件可直接通过 `wss://localhost:8443` 与本服务通信，例如：
 
 ```javascript
 const ws = new WebSocket('wss://localhost:8443');
-ws.onopen = () => {
+ ws.onopen = () => {
     ws.send(JSON.stringify({action: 'query_druginfo', druginfo: {Name: '药品名称'}}));
 };
 ws.onmessage = evt => console.log(evt.data);
+```
+
+若需要更新某药品的生产日期，可发送：
+
+```javascript
+ws.send(JSON.stringify({
+    action: 'update_druginfo_productdate',
+    druginfo: {fixmedins_hilist_name: '阿莫西林胶囊', manu_date: '2025-07-23'}
+}));
 ```
 
 如浏览器出现证书警告，请将 `server.pfx` 导入受信任的根证书颁发机构。该证书仅用于本地开发测试。
