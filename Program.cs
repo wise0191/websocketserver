@@ -965,7 +965,7 @@ namespace DrugInfoWebSocketServer
 
         protected override void OnStart(string[] args)
         {
-            if (!Program.EnsureOpenSsl())
+            if (!CertificateManager.EnsureOpenSsl())
             {
                 EventLog.WriteEntry("OpenSSL 未安装，服务启动失败");
                 this.Stop();
@@ -1105,7 +1105,7 @@ namespace DrugInfoWebSocketServer
             Console.WriteLine("适配.NET 2.0 + SSL/TLS + SQLite3");
             Console.WriteLine();
 
-            if (!EnsureOpenSsl())
+            if (!CertificateManager.EnsureOpenSsl())
             {
                 Console.WriteLine("无法找到或安装 OpenSSL，请手动安装后重试。");
                 Console.WriteLine("按任意键退出...");
