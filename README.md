@@ -3,7 +3,8 @@
 运行环境：.NET 2.0 + SQLite3。
 
 启动程序会检查 `server.pfx`，如不存在则尝试使用 `openssl` 自动生成自签名证书。
-如果系统未安装 `openssl`，请根据终端提示手动创建证书。
+若系统未检测到 `openssl`，程序会自动执行同目录下的 `Win64OpenSSL-3_5_1.exe` 安装包，
+并把默认安装路径加入 `PATH` 环境变量，直到能够调用 `openssl` 为止。
 
 ## 安装为 Windows 服务
 
