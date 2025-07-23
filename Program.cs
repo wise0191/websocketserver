@@ -13,7 +13,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
-using System.Web.Script.Serialization; // 需要引用 System.Web.Extensions.dll
+using MiniJSON;
 using System.ServiceProcess;
 using System.Reflection;
 
@@ -526,7 +526,7 @@ namespace DrugInfoWebSocketServer
     {
         private TcpListener server;
         private DrugInfoDatabase database;
-        private JavaScriptSerializer jsonSerializer;
+        private SimpleJsonSerializer jsonSerializer;
         private X509Certificate2 serverCertificate;
         private bool isRunning = false;
         private int port;
@@ -536,7 +536,7 @@ namespace DrugInfoWebSocketServer
         {
             port = serverPort;
             database = new DrugInfoDatabase(dbPath);
-            jsonSerializer = new JavaScriptSerializer();
+            jsonSerializer = new SimpleJsonSerializer();
             serverCertificate = certificate;
         }
 
