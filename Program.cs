@@ -637,6 +637,16 @@ namespace DrugInfoWebSocketServer
                             CrxMessage saveMsg = jsonSerializer.Deserialize<CrxMessage>(message);
                             response = SaveDrugInfo(saveMsg.druginfo);
                             break;
+                        case "query_manu_date_by_name":
+                            Dictionary<string, object> manuInfo = null;
+                            if (msgObj.ContainsKey("data"))
+                                manuInfo = msgObj["data"] as Dictionary<string, object>;
+                            string reqId = msgObj.ContainsKey("requestId") ? msgObj["requestId"] as string : string.Empty;
+                            var manuResp = QueryManuDateByName(manuInfo, reqId);
+                            string manuJson = jsonSerializer.Serialize(manuResp);
+                            connection.SendMessage(manuJson);
+                            Console.WriteLine("发送响应: " + manuJson);
+                            return;
                         case "query_druginfo":
                             CrxMessage queryMsg = jsonSerializer.Deserialize<CrxMessage>(message);
                             response = QueryDrugInfo(queryMsg.druginfo.Name);
@@ -779,8 +789,58 @@ namespace DrugInfoWebSocketServer
             response.success = true;
             response.message = "查询成功，找到 " + drugInfoList.Count + " 条记录";
             response.data = drugInfoList;
-            
+
             return response;
+        }
+
+        private Dictionary<string, object> QueryManuDateByName(Dictionary<string, object> info, string requestId)
+        {
+            string name = string.Empty;
+            if (info != null && info.ContainsKey("YPMC"))
+                name = info["YPMC"] as string;
+
+            string manuDate = null;
+            if (!string.IsNullOrEmpty(name))
+            {
+                if (preloadCache.ContainsKey(name))
+                {
+                    manuDate = preloadCache[name];
+                }
+                else
+                {
+                    List<DrugInfo> list = database.GetDrugInfoByName(name);
+                    foreach (DrugInfo di in list)
+                    {
+                        if (!string.IsNullOrEmpty(di.ManuDate))
+                        {
+                            manuDate = di.ManuDate;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            Dictionary<string, object> resp = new Dictionary<string, object>();
+            resp["action"] = "query_manu_date_response";
+            resp["requestId"] = requestId;
+
+            if (!string.IsNullOrEmpty(manuDate))
+            {
+                resp["success"] = true;
+                Dictionary<string, object> data = new Dictionary<string, object>();
+                data["manu_date"] = manuDate;
+                data["YPMC"] = name;
+                resp["data"] = data;
+                resp["message"] = "查询成功";
+            }
+            else
+            {
+                resp["success"] = false;
+                resp["data"] = null;
+                resp["message"] = "未找到对应的药品生产日期";
+            }
+
+            return resp;
         }
 
         public void Stop()
