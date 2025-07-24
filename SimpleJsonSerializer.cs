@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Linq;
 
 namespace DrugInfoWebSocketServer
 {
@@ -33,19 +32,34 @@ namespace DrugInfoWebSocketServer
                     if (!prop.CanWrite) continue;
 
                     object val = null;
-                    string matchedKey = dict.Keys.FirstOrDefault(k => string.Equals(k, prop.Name, StringComparison.OrdinalIgnoreCase));
+                    string matchedKey = null;
+                    foreach (string k in dict.Keys)
+                    {
+                        if (string.Equals(k, prop.Name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            matchedKey = k;
+                            break;
+                        }
+                    }
                     if (matchedKey != null)
                     {
                         val = dict[matchedKey];
                     }
                     else
                     {
-                        JsonAliasAttribute aliasAttr = prop.GetCustomAttribute<JsonAliasAttribute>();
+                        JsonAliasAttribute aliasAttr = (JsonAliasAttribute)Attribute.GetCustomAttribute(prop, typeof(JsonAliasAttribute));
                         if (aliasAttr != null)
                         {
                             foreach (string alias in aliasAttr.Aliases)
                             {
-                                matchedKey = dict.Keys.FirstOrDefault(k => string.Equals(k, alias, StringComparison.OrdinalIgnoreCase));
+                                foreach (string k in dict.Keys)
+                                {
+                                    if (string.Equals(k, alias, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        matchedKey = k;
+                                        break;
+                                    }
+                                }
                                 if (matchedKey != null)
                                 {
                                     val = dict[matchedKey];
@@ -153,7 +167,7 @@ namespace DrugInfoWebSocketServer
                 object val = prop.GetValue(obj, null);
                 val = PrepareForSerialize(val);
                 string key = prop.Name;
-                JsonAliasAttribute aliasAttr = prop.GetCustomAttribute<JsonAliasAttribute>();
+                JsonAliasAttribute aliasAttr = (JsonAliasAttribute)Attribute.GetCustomAttribute(prop, typeof(JsonAliasAttribute));
                 if (aliasAttr != null && aliasAttr.Aliases.Length > 0)
                     key = aliasAttr.Aliases[0];
                 result[key] = val;

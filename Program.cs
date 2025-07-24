@@ -926,7 +926,8 @@ namespace DrugInfoWebSocketServer
                     }
                 }
 
-                instanceMutex = new Mutex(true, "DrugInfoWsServerMutex", out _);
+                bool createdNew;
+                instanceMutex = new Mutex(true, "DrugInfoWsServerMutex", out createdNew);
                 return true;
             }
             catch
