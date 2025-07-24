@@ -20,13 +20,28 @@ namespace DrugInfoWebSocketServer
     // 药品信息数据结构
     public class DrugInfo
     {
+        [JsonAlias("YPMC", "fixmedins_hilist_name", "name")]
         public string Name { get; set; }
+
+        [JsonAlias("manu_lotnum")]
         public string ManuLotnum { get; set; }
+
+        [JsonAlias("manu_date")]
         public string ManuDate { get; set; }
+
+        [JsonAlias("expy_end")]
         public string ExpyEnd { get; set; }
+
+        [JsonAlias("YMMC")]
         public string YMMC { get; set; }
+
+        [JsonAlias("kcsb")]
         public int KCSB { get; set; }
+
+        [JsonAlias("msg")]
         public string Msg { get; set; }
+
+        [JsonAlias("create_time")]
         public DateTime CreateTime { get; set; }
     }
 

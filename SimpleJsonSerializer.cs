@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Linq;
 
 namespace DrugInfoWebSocketServer
 {
@@ -30,9 +31,32 @@ namespace DrugInfoWebSocketServer
                 foreach (PropertyInfo prop in type.GetProperties())
                 {
                     if (!prop.CanWrite) continue;
-                    if (dict.ContainsKey(prop.Name))
+
+                    object val = null;
+                    string matchedKey = dict.Keys.FirstOrDefault(k => string.Equals(k, prop.Name, StringComparison.OrdinalIgnoreCase));
+                    if (matchedKey != null)
                     {
-                        object val = dict[prop.Name];
+                        val = dict[matchedKey];
+                    }
+                    else
+                    {
+                        JsonAliasAttribute aliasAttr = prop.GetCustomAttribute<JsonAliasAttribute>();
+                        if (aliasAttr != null)
+                        {
+                            foreach (string alias in aliasAttr.Aliases)
+                            {
+                                matchedKey = dict.Keys.FirstOrDefault(k => string.Equals(k, alias, StringComparison.OrdinalIgnoreCase));
+                                if (matchedKey != null)
+                                {
+                                    val = dict[matchedKey];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (val != null)
+                    {
                         object converted = ConvertValue(prop.PropertyType, val);
                         prop.SetValue(instance, converted, null);
                     }
@@ -89,7 +113,52 @@ namespace DrugInfoWebSocketServer
 
         public string Serialize(object obj)
         {
-            return MiniJSON.Json.Serialize(obj);
+            object prepared = PrepareForSerialize(obj);
+            return MiniJSON.Json.Serialize(prepared);
+        }
+
+        private object PrepareForSerialize(object obj)
+        {
+            if (obj == null)
+                return null;
+
+            Type t = obj.GetType();
+            if (obj is string || t.IsPrimitive)
+                return obj;
+
+            if (obj is IDictionary dict)
+            {
+                Dictionary<string, object> nd = new Dictionary<string, object>();
+                foreach (DictionaryEntry kv in dict)
+                {
+                    nd[kv.Key.ToString()] = PrepareForSerialize(kv.Value);
+                }
+                return nd;
+            }
+
+            if (obj is IEnumerable && !(obj is string))
+            {
+                List<object> list = new List<object>();
+                foreach (object item in (IEnumerable)obj)
+                {
+                    list.Add(PrepareForSerialize(item));
+                }
+                return list;
+            }
+
+            Dictionary<string, object> result = new Dictionary<string, object>();
+            foreach (PropertyInfo prop in t.GetProperties())
+            {
+                if (!prop.CanRead) continue;
+                object val = prop.GetValue(obj, null);
+                val = PrepareForSerialize(val);
+                string key = prop.Name;
+                JsonAliasAttribute aliasAttr = prop.GetCustomAttribute<JsonAliasAttribute>();
+                if (aliasAttr != null && aliasAttr.Aliases.Length > 0)
+                    key = aliasAttr.Aliases[0];
+                result[key] = val;
+            }
+            return result;
         }
     }
 }
