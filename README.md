@@ -44,6 +44,32 @@ ws.onmessage = evt => console.log(evt.data);
 - `update_druginfo_preload` 预加载生产日期并写库。
 - `update_druginfo_batch` 批量写入药品信息。
 - `update_druginfo_productdate` 更新指定药品的生产日期。
+- `get_druginfo_productdates` 批量查询药品生产日期。
 
 JSON 返回值均包含 `success`、`message` 和可选 `data` 字段，具体格式可参考 `Program.cs` 中的实现。
+
+### 批量查询生产日期示例
+
+```javascript
+ws.send(JSON.stringify({
+    action: 'get_druginfo_productdates',
+    drugNames: ['阿司匹林', '对乙酰氨基酚'],
+    requestId: 'demo_001'
+}));
+```
+
+返回：
+
+```json
+{
+    "action": "get_druginfo_productdates_response",
+    "requestId": "demo_001",
+    "drugDates": [
+        { "drugName": "阿司匹林", "fixmedins_hilist_name": "阿司匹林", "manu_date": "2023-01-01" },
+        { "drugName": "对乙酰氨基酚", "fixmedins_hilist_name": "对乙酰氨基酚", "manu_date": null }
+    ],
+    "success": true,
+    "message": "查询完成"
+}
+```
 

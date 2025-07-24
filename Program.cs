@@ -542,6 +542,16 @@ namespace DrugInfoWebSocketServer
                             CrxMessage pdMsg = jsonSerializer.Deserialize<CrxMessage>(message);
                             response = UpdateDrugInfoProductDate(pdMsg.druginfo);
                             break;
+                        case "get_druginfo_productdates":
+                            List<object> namesList = null;
+                            if (msgObj.ContainsKey("drugNames"))
+                                namesList = msgObj["drugNames"] as List<object>;
+                            string reqId2 = msgObj.ContainsKey("requestId") ? msgObj["requestId"] as string : string.Empty;
+                            var datesResp = GetDrugInfoProductDates(namesList, reqId2);
+                            string datesJson = jsonSerializer.Serialize(datesResp);
+                            connection.SendMessage(datesJson);
+                            Console.WriteLine("发送响应: " + datesJson);
+                            return;
                         default:
                             response.success = false;
                             response.message = "未知的操作: " + action;
@@ -744,6 +754,56 @@ namespace DrugInfoWebSocketServer
                 resp["data"] = null;
                 resp["message"] = "未找到对应的药品生产日期";
             }
+
+            return resp;
+        }
+
+        private Dictionary<string, object> GetDrugInfoProductDates(List<object> names, string requestId)
+        {
+            Dictionary<string, object> resp = new Dictionary<string, object>();
+            resp["action"] = "get_druginfo_productdates_response";
+            resp["requestId"] = requestId;
+
+            List<Dictionary<string, object>> dateList = new List<Dictionary<string, object>>();
+
+            if (names != null)
+            {
+                foreach (object obj in names)
+                {
+                    string name = obj == null ? string.Empty : obj.ToString();
+                    string manuDate = null;
+
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        if (preloadCache.ContainsKey(name))
+                        {
+                            manuDate = preloadCache[name];
+                        }
+                        else
+                        {
+                            List<DrugInfo> list = database.GetDrugInfoByName(name);
+                            foreach (DrugInfo di in list)
+                            {
+                                if (!string.IsNullOrEmpty(di.ManuDate))
+                                {
+                                    manuDate = di.ManuDate;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    Dictionary<string, object> item = new Dictionary<string, object>();
+                    item["drugName"] = name;
+                    item["fixmedins_hilist_name"] = name;
+                    item["manu_date"] = manuDate;
+                    dateList.Add(item);
+                }
+            }
+
+            resp["drugDates"] = dateList;
+            resp["success"] = true;
+            resp["message"] = "查询完成";
 
             return resp;
         }
