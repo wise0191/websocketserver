@@ -25,6 +25,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="MiniJSON.cs" />
     <Compile Include="SimpleJsonSerializer.cs" />
+    <Compile Include="JsonAliasAttribute.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="server.pfx">
